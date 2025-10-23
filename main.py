@@ -1,5 +1,6 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from routers.airbnbs import router as airbnbs_router
 from routers.hotels import router as hotels_router
 from dotenv import load_dotenv
@@ -22,6 +23,15 @@ async def lifespan(app: FastAPI):
     logger.info("Application shutdown event triggered.")
 
 app = FastAPI(lifespan=lifespan)
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allows all origins
+    allow_credentials=True,
+    allow_methods=["*"],  # Allows all methods
+    allow_headers=["*"],  # Allows all headers
+)
 
 app.include_router(airbnbs_router, prefix="")
 app.include_router(hotels_router, prefix="")

@@ -1,61 +1,63 @@
 from fastapi import APIRouter, HTTPException, Query
-from services.geocoding_service import get_coordinates_for_hotel
+from services.geocoding_service import find_hotels_near_coordinates
 from services.database_service import execute_query
-from schemas.response_models import AirbnbResponse
+from schemas.response_models import HotelResponse
 from haversine import haversine, Unit
+import re
 from typing import List
 
 router = APIRouter()
 
-@router.get("/find_airbnbs_near_hotel", response_model=List[AirbnbResponse])
-def find_airbnbs_near_hotel(
-    hotel_name: str = Query(..., description="Name of the hotel"),
-    city: str = Query(..., description="City of the hotel"),
+def get_listing_id_from_url(url: str):
+    match = re.search(r"/rooms/(\d+)", url)
+    if match:
+        return match.group(1)
+    return None
+
+@router.get("/find_hotels_near_airbnb", response_model=List[HotelResponse])
+def find_hotels_near_airbnb(
+    listing_url: str = Query(..., description="URL of the Airbnb listing"),
     radius_km: int = Query(..., description="Radius in kilometers")
 ):
-    latitude, longitude = get_coordinates_for_hotel(hotel_name, city)
-    if not latitude or not longitude:
-        raise HTTPException(status_code=404, detail="Hotel not found")
+    listing_id = get_listing_id_from_url(listing_url)
+    if not listing_id:
+        raise HTTPException(status_code=400, detail="Invalid Airbnb listing URL")
 
     query = """
         SELECT
-            listing_id, host_name, property_city, latitude, longitude, price, review_scores_rating
+            latitude, longitude
         FROM
             dim_listings
         WHERE
-            is_local_host = 1 AND latitude IS NOT NULL AND longitude IS NOT NULL
+            listing_id = ?
     """
     
-    all_listings = execute_query(query)
+    results = execute_query(query, (listing_id,))
     
-    nearby_listings = []
-    for listing in all_listings:
-        listing_lat = float(listing['latitude'])
-        listing_lon = float(listing['longitude'])
-        distance = haversine((latitude, longitude), (listing_lat, listing_lon), unit=Unit.KILOMETERS)
-        if distance <= radius_km:
-            nearby_listings.append(
-                {
-                    "name": listing['host_name'],
-                    "latitude": listing_lat,
-                    "longitude": listing_lon,
-                    "price": listing['price'],
-                    "rating": listing['review_scores_rating'],
-                    "distance_km": distance
-                }
-            )
-            
-    # Sort by distance first (ascending)
-    sorted_by_distance = sorted(nearby_listings, key=lambda x: x['distance_km'])
+    if not results:
+        raise HTTPException(status_code=404, detail="Property not included in our database.")
 
-    # Then sort by rating (descending), placing None ratings at the end
-    sorted_by_rating_and_distance = sorted(
-        sorted_by_distance,
-        key=lambda x: (x['rating'] is not None, x['rating']),
-        reverse=True
-    )
+    airbnb_lat = float(results[0]['latitude'])
+    airbnb_lon = float(results[0]['longitude'])
 
-    # Take the top 10
-    top_ten_listings = sorted_by_rating_and_distance[:10]
+    hotels = find_hotels_near_coordinates(airbnb_lat, airbnb_lon, radius_km)
 
-    return top_ten_listings
+    nearby_hotels = []
+    for hotel in hotels:
+        hotel_lat = hotel['latitude']
+        hotel_lon = hotel['longitude']
+        distance = haversine((airbnb_lat, airbnb_lon), (hotel_lat, hotel_lon), unit=Unit.KILOMETERS)
+        nearby_hotels.append(
+            {
+                "name": hotel['name'],
+                "latitude": hotel_lat,
+                "longitude": hotel_lon,
+                "price": hotel.get('price'),
+                "rating": hotel.get('rating'),
+                "distance_km": distance
+            }
+        )
+
+    sorted_hotels = sorted(nearby_hotels, key=lambda x: x['distance_km'])
+
+    return sorted_hotels
