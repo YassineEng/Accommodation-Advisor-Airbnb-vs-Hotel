@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import Optional
+from typing import List, Optional
 
 class AirbnbResponse(BaseModel):
     name: str
@@ -10,6 +10,11 @@ class AirbnbResponse(BaseModel):
     distance_km: float
     listing_url: Optional[str]
 
+class AirbnbSearchResponse(BaseModel):
+    origin_latitude: float
+    origin_longitude: float
+    airbnbs: List[AirbnbResponse]
+
 class HotelResponse(BaseModel):
     name: str
     latitude: float
@@ -18,3 +23,8 @@ class HotelResponse(BaseModel):
     rating: Optional[float]
     distance_km: float
     website_url: Optional[str] = None
+
+class HotelSearchResponse(BaseModel):
+    origin_latitude: float
+    origin_longitude: float
+    hotels: List[HotelResponse]

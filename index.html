@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Accommodation Advisor</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -72,6 +73,13 @@
             font-weight: bold;
             margin-top: 10px;
         }
+        .map-container {
+            height: 300px; /* Set a height for the map */
+            width: 100%;
+            margin-top: 20px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
     </style>
 </head>
 <body>
@@ -94,6 +102,7 @@
                 <button type="submit">Search Airbnbs</button>
             </form>
             <div id="hotelSearchResults" class="results-section"></div>
+            <div id="airbnbMap" class="map-container"></div> <!-- Map for Airbnbs near a Hotel -->
         </div>
 
         <div class="form-section">
@@ -108,38 +117,78 @@
                 <button type="submit">Search Hotels</button>
             </form>
             <div id="airbnbSearchResults" class="results-section"></div>
+            <div id="hotelMap" class="map-container"></div> <!-- Map for Hotels near an Airbnb -->
         </div>
     </div>
 
+    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
     <script>
+        console.log("Script loaded.");
         const SERVER_URL = "http://127.0.0.1:8001"; // Ensure this matches your FastAPI server port
 
-        async function fetchData(url, resultsDivId) {
+        // Initialize maps
+        const airbnbMap = L.map('airbnbMap').setView([0, 0], 2); // Default view
+        const hotelMap = L.map('hotelMap').setView([0, 0], 2); // Default view
+
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        }).addTo(airbnbMap);
+
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        }).addTo(hotelMap);
+
+        let airbnbMarkers = L.featureGroup().addTo(airbnbMap);
+        let hotelMarkers = L.featureGroup().addTo(hotelMap);
+
+        async function fetchData(url, resultsDivId, mapInstance, markerLayer) {
+            console.log("fetchData called with URL:", url);
             const resultsDiv = document.getElementById(resultsDivId);
             resultsDiv.innerHTML = 'Loading...';
             resultsDiv.classList.remove('error-message');
+            markerLayer.clearLayers(); // Clear existing markers
 
             try {
                 const response = await fetch(url);
+                console.log("Response received:", response);
                 if (!response.ok) {
                     const errorData = await response.json();
                     throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
                 }
-                const data = await response.json();
-                displayResults(data, resultsDiv);
+                const responseData = await response.json(); // Renamed to avoid conflict with 'data' parameter
+                console.log("Response Data:", responseData);
+                
+                const originLat = responseData.origin_latitude;
+                const originLon = responseData.origin_longitude;
+                const resultsList = responseData.airbnbs || responseData.hotels; // Get the list of results
+
+                displayResults(resultsList, resultsDiv, mapInstance, markerLayer, originLat, originLon);
             } catch (error) {
+                console.error("Error in fetchData:", error);
                 resultsDiv.innerHTML = `<div class="error-message">Error: ${error.message}</div>`;
             }
         }
 
-        function displayResults(data, resultsDiv) {
-            if (data.length === 0) {
+        function displayResults(resultsList, resultsDiv, mapInstance, markerLayer, originLat, originLon) {
+            console.log("displayResults called with resultsList:", resultsList, "origin:", originLat, originLon);
+            if (resultsList.length === 0 && (!originLat || !originLon)) {
                 resultsDiv.innerHTML = '<p>No results found.</p>';
+                mapInstance.setView([0, 0], 2); // Reset map view
                 return;
             }
 
             let html = '';
-            data.forEach(item => {
+            let bounds = [];
+
+            // Add origin marker (red)
+            if (originLat && originLon) {
+                console.log("Adding origin marker:", originLat, originLon);
+                const originMarker = L.marker([originLat, originLon], { icon: L.divIcon({className: 'red-marker', html: '<div style="background-color: red; width: 1rem; height: 1rem; border-radius: 50%; border: 2px solid white;"></div>'}) }).bindPopup('Origin');
+                markerLayer.addLayer(originMarker);
+                bounds.push([originLat, originLon]);
+            }
+
+            resultsList.forEach(item => {
                 html += `
                     <div class="result-item">
                         <strong>${item.name || 'Unnamed'}</strong><br>
@@ -151,26 +200,41 @@
                         ${item.listing_url ? `<br><a href="${item.listing_url}" target="_blank">Listing URL</a>` : ''}
                     </div>
                 `;
+
+                // Add result marker (blue)
+                if (item.latitude && item.longitude) {
+                    console.log("Adding result marker:", item.name, item.latitude, item.longitude);
+                    const marker = L.marker([item.latitude, item.longitude], { icon: L.divIcon({className: 'blue-marker', html: '<div style="background-color: blue; width: 1rem; height: 1rem; border-radius: 50%; border: 2px solid white;"></div>'}) }).bindPopup(item.name || 'Unnamed');
+                    markerLayer.addLayer(marker);
+                    bounds.push([item.latitude, item.longitude]);
+                }
             });
             resultsDiv.innerHTML = html;
+
+            // Fit map to markers
+            if (bounds.length > 0) {
+                mapInstance.fitBounds(bounds, { padding: [50, 50] });
+            } else if (originLat && originLon) {
+                mapInstance.setView([originLat, originLon], 13); // Zoom in on origin if no results
+            }
         }
 
         document.getElementById('hotelSearchForm').addEventListener('submit', (event) => {
             event.preventDefault();
+            console.log("Hotel search form submitted.");
             const hotelName = document.getElementById('hotelName').value;
             const hotelCity = document.getElementById('hotelCity').value;
             const radiusKm = document.getElementById('radiusKmHotel').value;
             const url = `${SERVER_URL}/find_airbnbs_near_hotel?hotel_name=${encodeURIComponent(hotelName)}&city=${encodeURIComponent(hotelCity)}&radius_km=${radiusKm}`;
-            fetchData(url, 'hotelSearchResults');
+            fetchData(url, 'hotelSearchResults', airbnbMap, airbnbMarkers);
         });
 
         document.getElementById('airbnbSearchForm').addEventListener('submit', (event) => {
             event.preventDefault();
+            console.log("Airbnb search form submitted.");
             const airbnbUrl = document.getElementById('airbnbUrl').value;
             const radiusKm = document.getElementById('radiusKmAirbnb').value;
             const url = `${SERVER_URL}/find_hotels_near_airbnb?listing_url=${encodeURIComponent(airbnbUrl)}&radius_km=${radiusKm}`;
-            fetchData(url, 'airbnbSearchResults');
+            fetchData(url, 'airbnbSearchResults', hotelMap, hotelMarkers);
         });
     </script>
-</body>
-</html>

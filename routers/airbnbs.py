@@ -1,20 +1,20 @@
 from fastapi import APIRouter, HTTPException, Query
 from services.geocoding_service import get_coordinates_for_hotel
 from services.database_service import execute_query
-from schemas.response_models import AirbnbResponse
+from schemas.response_models import AirbnbResponse, AirbnbSearchResponse
 from haversine import haversine, Unit
 from typing import List
 
 router = APIRouter()
 
-@router.get("/find_airbnbs_near_hotel", response_model=List[AirbnbResponse])
+@router.get("/find_airbnbs_near_hotel", response_model=AirbnbSearchResponse)
 def find_airbnbs_near_hotel(
     hotel_name: str = Query(..., description="Name of the hotel"),
     city: str = Query(..., description="City of the hotel"),
     radius_km: int = Query(..., description="Radius in kilometers")
 ):
-    latitude, longitude = get_coordinates_for_hotel(hotel_name, city)
-    if not latitude or not longitude:
+    origin_latitude, origin_longitude = get_coordinates_for_hotel(hotel_name, city)
+    if not origin_latitude or not origin_longitude:
         raise HTTPException(status_code=404, detail="Hotel not found")
 
     query = """
@@ -32,7 +32,7 @@ def find_airbnbs_near_hotel(
     for listing in all_listings:
         listing_lat = float(listing['latitude'])
         listing_lon = float(listing['longitude'])
-        distance = haversine((latitude, longitude), (listing_lat, listing_lon), unit=Unit.KILOMETERS)
+        distance = haversine((origin_latitude, origin_longitude), (listing_lat, listing_lon), unit=Unit.KILOMETERS)
         if distance <= radius_km:
             nearby_listings.append(
                 {
@@ -57,6 +57,10 @@ def find_airbnbs_near_hotel(
     )
 
     # Take the top 10
-    top_ten_listings = sorted_by_rating_and_distance[:10]
+    airbnbs = sorted_by_rating_and_distance[:10]
 
-    return top_ten_listings
+    return {
+        "origin_latitude": origin_latitude,
+        "origin_longitude": origin_longitude,
+        "airbnbs": airbnbs
+    }
