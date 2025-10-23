@@ -41,7 +41,8 @@ def find_airbnbs_near_hotel(
                     "longitude": listing_lon,
                     "price": listing['price'],
                     "rating": listing['review_scores_rating'],
-                    "distance_km": distance
+                    "distance_km": distance,
+                    "listing_url": f"https://www.airbnb.com/rooms/{listing['listing_id']}"
                 }
             )
             

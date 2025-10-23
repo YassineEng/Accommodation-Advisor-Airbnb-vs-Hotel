@@ -147,6 +147,8 @@
                         Price: ${item.price !== null ? item.price : 'N/A'}<br>
                         Rating: ${item.rating !== null ? item.rating : 'N/A'}<br>
                         Distance: ${item.distance_km.toFixed(2)} km
+                        ${item.website_url ? `<br><a href="${item.website_url}" target="_blank">Website</a>` : ''}
+                        ${item.listing_url ? `<br><a href="${item.listing_url}" target="_blank">Listing URL</a>` : ''}
                     </div>
                 `;
             });

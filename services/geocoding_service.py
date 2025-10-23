@@ -32,20 +32,22 @@ def find_hotels_near_coordinates(latitude: float, longitude: float, radius_km: i
 
     overpass_query = f"""
         [out:json];
-        (node["tourism"~"hotel|hostel|motel|guest_house|chalet|resort|apartment"](
-            {latitude - lat_diff}, {longitude - lon_diff}, 
-            {latitude + lat_diff}, {longitude + lon_diff}
+        (
+            node["tourism"~"hotel|hostel|motel|guest_house|chalet|resort|apartment"](
+                {latitude - lat_diff}, {longitude - lon_diff}, 
+                {latitude + lat_diff}, {longitude + lon_diff}
+            );
+            way["tourism"~"hotel|hostel|motel|guest_house|chalet|resort|apartment"](
+                {latitude - lat_diff}, {longitude - lon_diff}, 
+                {latitude + lat_diff}, {longitude + lon_diff}
+            );
+            rel["tourism"~"hotel|hostel|motel|guest_house|chalet|resort|apartment"](
+                {latitude - lat_diff}, {longitude - lon_diff}, 
+                {latitude + lat_diff}, {longitude + lon_diff}
+            );
         );
-        way["tourism"~"hotel|hostel|motel|guest_house|chalet|resort|apartment"](
-            {latitude - lat_diff}, {longitude - lon_diff}, 
-            {latitude + lat_diff}, {longitude + lon_diff}
-        );
-        rel["tourism"~"hotel|hostel|motel|guest_house|chalet|resort|apartment"](
-            {latitude - lat_diff}, {longitude - lon_diff}, 
-            {latitude + lat_diff}, {longitude + lon_diff}
-        );
-        );
-        out center;
+        (._;>;);
+        out center tags;
     """
     logger.info(f"Overpass API Query: {overpass_query}")
 
@@ -70,13 +72,17 @@ def find_hotels_near_coordinates(latitude: float, longitude: float, radius_km: i
             else:
                 continue
 
-            name = element['tags'].get('name', 'Unnamed Lodging')
+            name = element.get('tags', {}).get('name')
+            if not name: # Skip if name is None or empty
+                continue
+            website = element.get('tags', {}).get('website') or element.get('tags', {}).get('contact:website')
             hotels.append({
                 "name": name,
                 "latitude": lat,
                 "longitude": lon,
                 "price": None, # Not available from Overpass API
-                "rating": None # Not available from Overpass API
+                "rating": None, # Not available from Overpass API
+                "website_url": website
             })
         return hotels
     except requests.exceptions.RequestException as e:

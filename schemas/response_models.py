@@ -8,6 +8,7 @@ class AirbnbResponse(BaseModel):
     price: Optional[float]
     rating: Optional[float]
     distance_km: float
+    listing_url: Optional[str]
 
 class HotelResponse(BaseModel):
     name: str
@@ -16,3 +17,4 @@ class HotelResponse(BaseModel):
     price: Optional[float]
     rating: Optional[float]
     distance_km: float
+    website_url: Optional[str] = None
